@@ -1,0 +1,103 @@
+---
+title: "Fit"
+author: "cdepeuter"
+date: "08/18/2015"
+output: html_document
+---
+
+###Introduction
+
+In this project I will build a classifying model which attempts to predict how well a workout is being done. My first step is to split the data into testing an training sets. I will use a 70% partition.
+
+```{r, echo=TRUE}
+library(dplyr);library(plyr);library(caret);
+d<-tbl_df(read.csv("pml-training.csv"))
+#split data in to training and testing
+inTrain <- createDataPartition(y=d$classe, p=0.7, list=FALSE)
+t <- d[inTrain,]
+testing <- d[-inTrain,]
+
+
+
+```
+
+
+##NA Values
+There are a lot of columns with mostly NA values, I will remove these immediately. This gets us from 160 columns to 93.
+
+```{r, echo=TRUE}
+t<-t[,colSums(is.na(t))<nrow(t)/5]
+```
+
+
+###Selecting relevant features
+The original data comes from a study attempting to create the same sort of model. I will reference this study in my investigation. It is available here
+http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201
+
+The study in the paper identifies 17 attribute which the researchers discovered were most important using a feature selection algorithm, configured to use a best-first backtracking strategy.  These features were as follows:
+  *Belt:
+    *mean, var of roll
+    *max, var, range accel
+    *var of gyro and magnetometer
+  *Arm:
+    *var accel
+    *max, min magnetometer
+  *Dumbell:
+    *max accel
+    *var gyro
+    *max and min of magnetometer
+  *Glove:
+    *sum pitch
+    *max and min of gyro
+    
+Most of these features aren't directly available in the initial dataset, some work is needed to form them. As some of them identify summarizing characteristics throughout a window , I need to group the training data by window, and calculate each of these features. For example, the variance of the gyro in the belt and dumbell are requested, but in the data there are only x, y, z gyro values. I will grab the values needed to form the summarizing statistics, and build my trained model from those. If this model works well enough I will use that. If it needs improving I will attempt to calculate the summarizing statistics.
+
+
+```{r, echo=TRUE}
+
+firstSubset<-c('^roll_belt','total_accel_belt','^magnet_belt_', '^accel_belt_', '^gyros_belt_', '^accel_arm_','^magnet_dumbell_', '^accel_dumbell_', '^gyros_dumbell_', '^pitch_forearm$' , '^gyros_forearm_', 'classe')
+myCol<-names(t)[grep(paste(firstSubset, collapse="|"),names(t))] 
+fil<-t[,myCol]
+#fil_na <- fil[complete.cases(fil),]
+names(fil)
+```
+
+
+
+```{r, echo=FALSE}
+
+nas <- sum(is.na(fil))
+```
+
+There are now `r nas` NA's in this data. Ready to proceed.
+
+These are the vairables most likely used in the paper to make the model. They are all not NA in every instance in the given test data (the problems to executue test, not the test set we created here), which is crucial for our ability to make predictions on that dat. I will now create the the model using these variables. The model will be a random forest classifier.
+
+```{r, echo=TRUE}
+modelFit <- train(classe ~ ., method="rf", data=fil)
+prd<-predict(modelFit, testing)
+testing$predRight <- prd==testing$classe
+percentCorrect <- sum(testing$predRight)/nrow(testing)
+```
+
+Our model correctly predicted our sample test with `r percentCorrect` % accuracy.
+
+##Investigating the model
+What variables were the most important in the model?
+
+
+```{r, echo=TRUE}
+importance <- varImp(modelFit)
+plot(importance, main="Weight of each variable in the Random Forest Model")
+
+```
+
+##Out of sample error
+
+```{r, echo=TRUE}
+oosError<- 100 - sum(testing$predRight)/nrow(testing)
+```
+
+The estimated out of sample error is `r oosError`%. 
+
+An important note: for the model used to answer the problems for this project, I will split the data into test and traning sets. I will build it using all 19622 observations.
